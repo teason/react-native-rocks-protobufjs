@@ -118,49 +118,56 @@ function genVerifyKey(gen, field, ref) {
 function verifier(mtype) {
     /* eslint-disable no-unexpected-multiline */
 
-    var gen = util.codegen("m")
+    var gen = util.codegen(["m"], mtype.name + "$verify")
     ("if(typeof m!==\"object\"||m===null)")
         ("return%j", "object expected");
+    var oneofs = mtype.oneofsArray,
+        seenFirstField = {};
+    if (oneofs.length) gen
+    ("var p={}");
 
     for (var i = 0; i < /* initializes */ mtype.fieldsArray.length; ++i) {
         var field = mtype._fieldsArray[i].resolve(),
             ref   = "m" + util.safeProp(field.name);
 
+        if (field.optional) gen
+        ("if(%s!=null&&m.hasOwnProperty(%j)){", ref, field.name); // !== undefined && !== null
+
         // map fields
         if (field.map) { gen
-            ("if(%s!==undefined){", ref)
                 ("if(!util.isObject(%s))", ref)
                     ("return%j", invalid(field, "object"))
                 ("var k=Object.keys(%s)", ref)
                 ("for(var i=0;i<k.length;++i){");
                     genVerifyKey(gen, field, "k[i]");
                     genVerifyValue(gen, field, i, ref + "[k[i]]")
-                ("}")
             ("}");
 
         // repeated fields
         } else if (field.repeated) { gen
-            ("if(%s!==undefined){", ref)
                 ("if(!Array.isArray(%s))", ref)
                     ("return%j", invalid(field, "array"))
                 ("for(var i=0;i<%s.length;++i){", ref);
                     genVerifyValue(gen, field, i, ref + "[i]")
-                ("}")
             ("}");
 
         // required or present fields
         } else {
-            if (!field.required) {
-                if (field.resolvedType && !(field.resolvedType instanceof Enum)) gen
-            ("if(%s!==undefined&&%s!==null){", ref, ref);
-                else gen
-            ("if(%s!==undefined){", ref);
+            if (field.partOf) {
+                var oneofProp = util.safeProp(field.partOf.name);
+                if (seenFirstField[field.partOf.name] === 1) gen
+            ("if(p%s===1)", oneofProp)
+                ("return%j", field.partOf.name + ": multiple values");
+                seenFirstField[field.partOf.name] = 1;
+                gen
+            ("p%s=1", oneofProp);
             }
                 genVerifyValue(gen, field, i, ref);
-            if (!field.required) gen
+        }
+        if (field.optional) gen
             ("}");
         }
-    } return gen
+    return gen
     ("return null");
     /* eslint-enable no-unexpected-multiline */
 }
